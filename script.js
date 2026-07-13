@@ -181,7 +181,6 @@ function processAndRenderData() {
     const agentAggregation = {};
 
     filteredData.forEach(item => {
-        // Skip jika durasi kosong atau nol agar pembagi rata-rata (hari aktif) akurat
         if (!item.duration || item.duration <= 0) return;
 
         if (!agentAggregation[item.agent]) {
@@ -200,25 +199,123 @@ function processAndRenderData() {
     const chartAvgMinutes = []; 
     const tableData = [];
 
+    // Deteksi jika user sedang memfilter berdasarkan Week atau Month tertentu
+    const isAccumulatedFilter = (selectedWeek !== "ALL" || selectedMonth !== "ALL");
+
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
         
-        // Rata-rata = Total durasi dibagi jumlah hari aktif agent tersebut
-        const avgSeconds = agent.totalDurationSeconds / agent.daysActive;
-        chartAvgMinutes.push(parseFloat((avgSeconds / 60).toFixed(2))); 
+        let displayAvgSeconds;
+        if (isAccumulatedFilter) {
+            // JIKA FILTER WEEK/MONTH AKTIF: Nilai AVG diubah menjadi penjumlahan total periode tersebut
+            displayAvgSeconds = agent.totalDurationSeconds;
+        } else {
+            // JIKA FILTER ALL/HARIAN AKTIF: Nilai AVG dihitung rata-rata per hari aktif agen
+            displayAvgSeconds = agent.totalDurationSeconds / agent.daysActive;
+        }
+
+        chartAvgMinutes.push(parseFloat((displayAvgSeconds / 60).toFixed(2))); 
 
         tableData.push({
             name: agent.name,
             totalDuration: formatSecondsToCustomHMS(agent.totalDurationSeconds),
-            avgDuration: formatSecondsToCustomHMS(avgSeconds)
+            avgDuration: formatSecondsToCustomHMS(displayAvgSeconds)
         });
     });
 
     renderChart(chartAgents, chartAvgMinutes, agentAggregation);
-    renderAgentTable(tableData, agentAggregation);
+    
+    // Aturan Khusus: Baris Overall Average paling bawah HANYA muncul jika filter Agent, Day, dan Week bernilai "ALL"
+    const showOverallAverage = (selectedAgent === "ALL" && selectedDay === "ALL" && selectedWeek === "ALL");
+    
+    renderAgentTable(tableData, agentAggregation, showOverallAverage);
 }
 
-function renderAgentTable(dataList, rawAggregation) {
+function parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    timeStr = timeStr.trim();
+    if (timeStr.includes(':')) {
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+        if (parts.length === 2) return (parts[0] * 60) + parts[1];
+    }
+    return 0;
+}
+
+function formatSecondsToCustomHMS(totalSeconds) {
+    if (isNaN(totalSeconds) || totalSeconds <= 0) return "0m 0s";
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+}
+
+function renderChart(agents, avgMinutes, rawAggregation) {
+    const chartStatus = Chart.getChart("ticketChart");
+    if (chartStatus != undefined) chartStatus.destroy();
+
+    new Chart(document.getElementById('ticketChart'), {
+        type: 'bar',
+        data: {
+            labels: agents,
+            datasets: [{
+                data: avgMinutes,
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(139, 92, 246, 0.8)'
+                ],
+                borderColor: ['#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'],
+                borderWidth: 1,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { 
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: '#334155' }, 
+                    title: { display: true, text: 'Waktu Respon (Menit)', color: '#94a3b8' },
+                    ticks: { color: '#94a3b8' }
+                }, 
+                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
+            },
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const agentName = context.label;
+                            // Menyesuaikan teks tooltip pada grafik agar selaras dengan tabel
+                            const selectedWeek = document.getElementById('filter-week').value;
+                            const selectedMonth = document.getElementById('filter-month').value;
+                            const isAccumulated = (selectedWeek !== "ALL" || selectedMonth !== "ALL");
+                            
+                            if (isAccumulated) {
+                                return ` Total RT: ${formatSecondsToCustomHMS(rawAggregation[agentName].totalDurationSeconds)}`;
+                            } else {
+                                const avgSec = rawAggregation[agentName].totalDurationSeconds / rawAggregation[agentName].daysActive;
+                                return ` Avg RT: ${formatSecondsToCustomHMS(avgSec)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
+    if (chartHeader) {
+        chartHeader.innerText = `AVG RESPONSE TIME`;
+    }
+}
+
+function renderAgentTable(dataList, rawAggregation, showOverallAverage) {
     const tableBody = document.getElementById('agent-table-body');
     tableBody.innerHTML = ""; 
     
@@ -227,10 +324,7 @@ function renderAgentTable(dataList, rawAggregation) {
         return;
     }
 
-    let globalTotalSeconds = 0;
-    let globalTotalDaysActive = 0;
-
-    // 1. Render data per Agent (Total di tengah, Avg di kanan sesuai sheet)
+    // 1. Render data per Agent sesuai kondisi filter waktu saat ini
     dataList.forEach(item => {
         const rowHTML = `
             <tr class="hover:bg-slate-700/50 transition-colors">
@@ -242,22 +336,25 @@ function renderAgentTable(dataList, rawAggregation) {
         tableBody.insertAdjacentHTML('beforeend', rowHTML);
     });
 
-    // 2. Hitung akumulasi global untuk ringkasan Tim
-    Object.values(rawAggregation).forEach(agent => {
-        globalTotalSeconds += agent.totalDurationSeconds;
-        globalTotalDaysActive += agent.daysActive;
-    });
+    // 2. Render baris ringkasan tim "Overall Average" di paling bawah hanya saat filter diizinkan
+    if (showOverallAverage) {
+        let globalTotalSeconds = 0;
+        let globalTotalDaysActive = 0;
 
-    // Rata-rata tim keseluruhan
-    const globalAvgSeconds = globalTotalDaysActive > 0 ? (globalTotalSeconds / globalTotalDaysActive) : 0;
+        Object.values(rawAggregation).forEach(agent => {
+            globalTotalSeconds += agent.totalDurationSeconds;
+            globalTotalDaysActive += agent.daysActive;
+        });
 
-    // 3. Render baris TOTAL AVG TIM di bawah list nama agent
-    const totalRowHTML = `
-        <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
-            <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
-            <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
-            <td class="py-3 px-4 text-right font-mono text-amber-400 text-base">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
-        </tr>
-    `;
-    tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
+        const globalAvgSeconds = globalTotalDaysActive > 0 ? (globalTotalSeconds / globalTotalDaysActive) : 0;
+
+        const totalRowHTML = `
+            <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
+                <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
+                <td class="py-3 px-4 text-right font-mono text-amber-400 text-base font-bold">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
+    }
 }
