@@ -181,14 +181,17 @@ function processAndRenderData() {
     const agentAggregation = {};
 
     filteredData.forEach(item => {
+        // Skip jika durasi kosong atau nol agar pembagi rata-rata (hari aktif) akurat
+        if (!item.duration || item.duration <= 0) return;
+
         if (!agentAggregation[item.agent]) {
             agentAggregation[item.agent] = {
                 name: item.agent,
-                activityCount: 1,
+                daysActive: 1,
                 totalDurationSeconds: item.duration
             };
         } else {
-            agentAggregation[item.agent].activityCount += 1;
+            agentAggregation[item.agent].daysActive += 1;
             agentAggregation[item.agent].totalDurationSeconds += item.duration;
         }
     });
@@ -200,8 +203,8 @@ function processAndRenderData() {
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
         
-        const avgSeconds = agent.totalDurationSeconds / agent.activityCount;
-        // Mengubah detik ke menit desimal untuk tinggi batang grafik (misal 2m 30s menjadi 2.5)
+        // Rata-rata = Total durasi dibagi jumlah hari aktif agent tersebut
+        const avgSeconds = agent.totalDurationSeconds / agent.daysActive;
         chartAvgMinutes.push(parseFloat((avgSeconds / 60).toFixed(2))); 
 
         tableData.push({
@@ -212,88 +215,10 @@ function processAndRenderData() {
     });
 
     renderChart(chartAgents, chartAvgMinutes, agentAggregation);
-    renderAgentTable(tableData);
+    renderAgentTable(tableData, agentAggregation);
 }
 
-function parseTimeToSeconds(timeStr) {
-    if (!timeStr) return 0;
-    timeStr = timeStr.trim();
-    if (timeStr.includes(':')) {
-        const parts = timeStr.split(':').map(Number);
-        if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-        if (parts.length === 2) return (parts[0] * 60) + parts[1];
-    }
-    return 0;
-}
-
-function formatSecondsToCustomHMS(totalSeconds) {
-    if (isNaN(totalSeconds) || totalSeconds <= 0) return "0m 0s";
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = Math.floor(totalSeconds % 60);
-    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-    return `${minutes}m ${seconds}s`;
-}
-
-function renderChart(agents, avgMinutes, rawAggregation) {
-    const chartStatus = Chart.getChart("ticketChart");
-    if (chartStatus != undefined) chartStatus.destroy();
-
-    new Chart(document.getElementById('ticketChart'), {
-        type: 'bar',
-        data: {
-            labels: agents,
-            datasets: [{
-                data: avgMinutes,
-                backgroundColor: [
-                    'rgba(59, 130, 246, 0.8)',
-                    'rgba(16, 185, 129, 0.8)',
-                    'rgba(245, 158, 11, 0.8)',
-                    'rgba(239, 68, 68, 0.8)',
-                    'rgba(139, 92, 246, 0.8)'
-                ],
-                borderColor: ['#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'],
-                borderWidth: 1,
-                borderRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { 
-                y: { 
-                    beginAtZero: true, 
-                    grid: { color: '#334155' }, 
-                    title: { display: true, text: 'Rata-rata (Menit)', color: '#94a3b8' },
-                    ticks: { color: '#94a3b8' }
-                }, 
-                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
-            },
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const agentName = context.label;
-                            const totalDataSeconds = rawAggregation[agentName].totalDurationSeconds;
-                            const count = rawAggregation[agentName].activityCount;
-                            const finalAvgSeconds = totalDataSeconds / count;
-                            return ` Avg RT: ${formatSecondsToCustomHMS(finalAvgSeconds)}`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // MEMASTIKAN teks TOTAL PENGERJAAN TIKET diganti jadi AVG RESPONSE TIME
-    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
-    if (chartHeader) {
-        chartHeader.innerText = `AVG RESPONSE TIME`;
-    }
-}
-
-function renderAgentTable(dataList) {
+function renderAgentTable(dataList, rawAggregation) {
     const tableBody = document.getElementById('agent-table-body');
     tableBody.innerHTML = ""; 
     
@@ -302,14 +227,37 @@ function renderAgentTable(dataList) {
         return;
     }
 
+    let globalTotalSeconds = 0;
+    let globalTotalDaysActive = 0;
+
+    // 1. Render data per Agent (Total di tengah, Avg di kanan sesuai sheet)
     dataList.forEach(item => {
         const rowHTML = `
             <tr class="hover:bg-slate-700/50 transition-colors">
                 <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
-                <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${item.avgDuration}</td>
                 <td class="py-3 px-4 text-right font-mono text-slate-400">${item.totalDuration}</td>
+                <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${item.avgDuration}</td>
             </tr>
         `;
         tableBody.insertAdjacentHTML('beforeend', rowHTML);
     });
+
+    // 2. Hitung akumulasi global untuk ringkasan Tim
+    Object.values(rawAggregation).forEach(agent => {
+        globalTotalSeconds += agent.totalDurationSeconds;
+        globalTotalDaysActive += agent.daysActive;
+    });
+
+    // Rata-rata tim keseluruhan
+    const globalAvgSeconds = globalTotalDaysActive > 0 ? (globalTotalSeconds / globalTotalDaysActive) : 0;
+
+    // 3. Render baris TOTAL AVG TIM di bawah list nama agent
+    const totalRowHTML = `
+        <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
+            <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
+            <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
+            <td class="py-3 px-4 text-right font-mono text-amber-400 text-base">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
+        </tr>
+    `;
+    tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
 }
