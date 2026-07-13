@@ -1,5 +1,5 @@
-// Gantilah teks di bawah ini dengan URL CSV Google Sheets Anda
-const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCLXvz4_F7EfUppPoKWSKQawlesCjiYHhceQCIEDoV8ntbDjFrvKUorP416AGydpWYmxWlOLA3b1JL/pub?gid=549661576&single=true&output=csv";
+// ISI DENGAN URL CSV GOOGLE SHEETS ANDA
+const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_I84HddcHmrqfAGsN22vjT7h4m8uBDvArKdThs747mhBS2jGmubz5No0aooRKlkxmAsUL7-IdAmVk/pub?gid=407332327&single=true&output=csv";
 
 let rawSheetData = [];
 
@@ -8,7 +8,7 @@ window.addEventListener('load', () => {
     setupFilterListeners();
 });
 
-// Fungsi pemisah baris pintar agar angka ribuan ber-koma tidak merusak urutan kolom
+// Fungsi pembagi baris yang aman dari masalah tanda koma desimal
 function parseCSVLine(text) {
     const result = [];
     let insideQuote = false;
@@ -38,26 +38,51 @@ async function fetchData() {
         const lines = dataText.split(/\r?\n/);
         rawSheetData = []; 
 
+        if (lines.length < 2) return;
+
+        // Ambil header untuk mendeteksi posisi nama-nama Agent secara dinamis
+        const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, ''));
+        
+        // Sesuai gambar: Kolom A=Date(0), B=Day(1), C=Month(2), D=Week(3)
+        // Agent dimulai dari Indeks 4 (Kolom E) sampai sebelum kolom 'Average'
+        const agentColumns = [];
+        for (let j = 4; j < headers.length; j++) {
+            if (headers[j] && headers[j].toLowerCase() !== 'average' && headers[j] !== '') {
+                agentColumns.push({ index: j, name: headers[j] });
+            }
+        }
+
+        // Looping baris data (Mulai dari baris ke-2)
         for(let i = 1; i < lines.length; i++) {
             if (!lines[i]) continue;
             
             const cols = parseCSVLine(lines[i]);
-            
-            // Kolom E (Indeks 4) adalah Agent. Pastikan ada data dan bukan baris header
-            if(cols && cols.length >= 10 && cols[4] && cols[4].toLowerCase() !== "agent") {
-                rawSheetData.push({
-                    date: cols[0].replace(/"/g, ''),
-                    day: cols[1].replace(/"/g, ''),
-                    month: cols[2].replace(/"/g, ''),
-                    week: cols[3].replace(/"/g, ''),
-                    agent: cols[4].replace(/"/g, ''),
-                    ticket: parseInt(cols[5], 10) || 0,
-                    art: parseTimeToSeconds(cols[6]),
-                    responseCount: parseInt(cols[7], 10) || 0,
-                    aht: parseTimeToSeconds(cols[8]),
-                    timeSpan: parseTimeToSeconds(cols[9])
-                });
-            }
+            if (cols.length < 4) continue;
+
+            const dateVal = cols[0].replace(/"/g, '');
+            const dayVal = cols[1].replace(/"/g, '');
+            const monthVal = cols[2].replace(/"/g, '');
+            const weekVal = cols[3].replace(/"/g, '');
+
+            // Lewati jika baris kosong atau baris duplikat header
+            if (dateVal.toLowerCase() === 'date' || !dateVal) continue;
+
+            // Karena format mendatar, pecah baris ini menjadi per agent agar bisa difilter fleksibel
+            agentColumns.forEach(ag => {
+                const durationStr = cols[ag.index] ? cols[ag.index].replace(/"/g, '') : "";
+                
+                // Hanya masukkan ke data jika agent memiliki catatan durasi/aktivitas pada hari itu
+                if (durationStr && durationStr !== "0:00:00") {
+                    rawSheetData.push({
+                        date: dateVal,
+                        day: dayVal,
+                        month: monthVal,
+                        week: weekVal,
+                        agent: ag.name,
+                        duration: parseTimeToSeconds(durationStr)
+                    });
+                }
+            });
         }
 
         populateFilterDropdowns();
@@ -123,7 +148,6 @@ function processAndRenderData() {
     const selectedMonth = document.getElementById('filter-month').value;
     const selectedDate = document.getElementById('filter-date').value;
 
-    // Filter data mentah berdasarkan kelima parameter dropdown sekaligus
     const filteredData = rawSheetData.filter(item => {
         const matchAgent = (selectedAgent === "ALL" || item.agent === selectedAgent);
         const matchDay = (selectedDay === "ALL" || item.day === selectedDay);
@@ -139,57 +163,45 @@ function processAndRenderData() {
         if (!agentAggregation[item.agent]) {
             agentAggregation[item.agent] = {
                 name: item.agent,
-                totalTickets: item.ticket,
-                totalResponse: item.responseCount,
-                artSecondsSum: item.art,
-                ahtSecondsSum: item.aht,
-                timeSpanSecondsSum: item.timeSpan,
-                rowCount: 1
+                activityCount: 1, // Berapa kali handle/bekerja pada filter terpilih
+                totalDurationSeconds: item.duration
             };
         } else {
-            agentAggregation[item.agent].totalTickets += item.ticket;
-            agentAggregation[item.agent].totalResponse += item.responseCount;
-            agentAggregation[item.agent].artSecondsSum += item.art;
-            agentAggregation[item.agent].ahtSecondsSum += item.aht;
-            agentAggregation[item.agent].timeSpanSecondsSum += item.timeSpan;
-            agentAggregation[item.agent].rowCount += 1;
+            agentAggregation[item.agent].activityCount += 1;
+            agentAggregation[item.agent].totalDurationSeconds += item.duration;
         }
     });
 
     const chartAgents = [];
-    const chartTickets = [];
+    const chartActivities = [];
     const tableData = [];
 
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
-        chartTickets.push(agent.totalTickets);
+        // Grafik menampilkan frekuensi aktivitas/kasus yang ditangani berdasarkan filter
+        chartActivities.push(agent.activityCount); 
         
+        const avgSeconds = agent.totalDurationSeconds / agent.activityCount;
+
         tableData.push({
             name: agent.name,
-            ticket: agent.totalTickets,
-            responseCount: agent.totalResponse,
-            art: formatSecondsToCustomHMS(agent.artSecondsSum / agent.rowCount),
-            aht: formatSecondsToCustomHMS(agent.ahtSecondsSum / agent.rowCount),
-            timeSpan: formatSecondsToCustomHMS(agent.timeSpanSecondsSum / agent.rowCount)
+            activity: agent.activityCount,
+            totalDuration: formatSecondsToCustomHMS(agent.totalDurationSeconds),
+            avgDuration: formatSecondsToCustomHMS(avgSeconds)
         });
     });
 
-    renderTicketChart(chartAgents, chartTickets);
+    renderChart(chartAgents, chartActivities);
     renderAgentTable(tableData);
 }
 
 function parseTimeToSeconds(timeStr) {
     if (!timeStr) return 0;
-    timeStr = timeStr.trim().replace(/"/g, '');
+    timeStr = timeStr.trim();
     if (timeStr.includes(':')) {
         const parts = timeStr.split(':').map(Number);
         if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
         if (parts.length === 2) return (parts[0] * 60) + parts[1];
-    }
-    const num = parseFloat(timeStr);
-    if (!isNaN(num)) {
-        if (num < 1) return Math.round(num * 86400); 
-        return Math.round(num);
     }
     return 0;
 }
@@ -203,7 +215,7 @@ function formatSecondsToCustomHMS(totalSeconds) {
     return `${minutes}m ${seconds}s`;
 }
 
-function renderTicketChart(agents, tickets) {
+function renderChart(agents, activities) {
     const chartStatus = Chart.getChart("ticketChart");
     if (chartStatus != undefined) chartStatus.destroy();
 
@@ -212,7 +224,7 @@ function renderTicketChart(agents, tickets) {
         data: {
             labels: agents,
             datasets: [{
-                data: tickets,
+                data: activities,
                 backgroundColor: '#3b82f6',
                 borderRadius: 6
             }]
@@ -221,7 +233,7 @@ function renderTicketChart(agents, tickets) {
             responsive: true,
             maintainAspectRatio: false,
             scales: { 
-                y: { beginAtZero: true, grid: { color: '#334155' } }, 
+                y: { beginAtZero: true, grid: { color: '#334155' }, title: { display: true, text: 'Frekuensi Aktivitas', color: '#94a3b8' } }, 
                 x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
             },
             plugins: { legend: { display: false } }
@@ -234,7 +246,7 @@ function renderAgentTable(dataList) {
     tableBody.innerHTML = ""; 
     
     if(dataList.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
         return;
     }
 
@@ -242,11 +254,9 @@ function renderAgentTable(dataList) {
         const rowHTML = `
             <tr class="hover:bg-slate-700/50 transition-colors">
                 <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
-                <td class="py-3 px-4 text-center text-blue-400 font-bold">${item.ticket}</td>
-                <td class="py-3 px-4 text-center text-slate-400">${item.responseCount}</td>
-                <td class="py-3 px-4 text-right font-mono text-emerald-400">${item.art}</td>
-                <td class="py-3 px-4 text-right font-mono text-rose-400">${item.aht}</td>
-                <td class="py-3 px-4 text-right font-mono text-amber-400">${item.timeSpan}</td>
+                <td class="py-3 px-4 text-center text-blue-400 font-bold">${item.activity}</td>
+                <td class="py-3 px-4 text-right font-mono text-emerald-400">${item.avgDuration}</td>
+                <td class="py-3 px-4 text-right font-mono text-amber-400">${item.totalDuration}</td>
             </tr>
         `;
         tableBody.insertAdjacentHTML('beforeend', rowHTML);
