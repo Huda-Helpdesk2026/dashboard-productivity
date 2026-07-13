@@ -194,13 +194,14 @@ function processAndRenderData() {
     });
 
     const chartAgents = [];
-    const chartAvgMinutes = []; // Konversi ke menit desimal untuk visualisasi grafik
+    const chartAvgMinutes = []; 
     const tableData = [];
 
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
         
         const avgSeconds = agent.totalDurationSeconds / agent.activityCount;
+        // Mengubah detik ke menit desimal untuk tinggi batang grafik (misal 2m 30s menjadi 2.5)
         chartAvgMinutes.push(parseFloat((avgSeconds / 60).toFixed(2))); 
 
         tableData.push({
@@ -244,8 +245,14 @@ function renderChart(agents, avgMinutes, rawAggregation) {
             labels: agents,
             datasets: [{
                 data: avgMinutes,
-                backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                borderColor: '#3b82f6',
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(139, 92, 246, 0.8)'
+                ],
+                borderColor: ['#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'],
                 borderWidth: 1,
                 borderRadius: 6
             }]
@@ -271,13 +278,19 @@ function renderChart(agents, avgMinutes, rawAggregation) {
                             const totalDataSeconds = rawAggregation[agentName].totalDurationSeconds;
                             const count = rawAggregation[agentName].activityCount;
                             const finalAvgSeconds = totalDataSeconds / count;
-                            return ` Rata-rata: ${formatSecondsToCustomHMS(finalAvgSeconds)}`;
+                            return ` Avg RT: ${formatSecondsToCustomHMS(finalAvgSeconds)}`;
                         }
                     }
                 }
             }
         }
     });
+
+    // MEMASTIKAN teks TOTAL PENGERJAAN TIKET diganti jadi AVG RESPONSE TIME
+    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
+    if (chartHeader) {
+        chartHeader.innerText = `AVG RESPONSE TIME`;
+    }
 }
 
 function renderAgentTable(dataList) {
