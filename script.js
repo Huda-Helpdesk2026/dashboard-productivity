@@ -169,6 +169,27 @@ function processAndRenderData() {
     const selectedMonth = document.getElementById('filter-month').value;
     const selectedDate = document.getElementById('filter-date').value;
 
+    // Cek apakah ada salah satu filter waktu yang sedang aktif digunakan oleh user
+    const anyFilterTimeActive = (selectedDay !== "ALL" || selectedWeek !== "ALL" || selectedMonth !== "ALL" || selectedDate !== "ALL");
+
+    // 1. STATE DEFAULT: Jika tidak ada filter waktu yang dipilih sama sekali
+    if (!anyFilterTimeActive) {
+        // Ambil daftar unik nama seluruh agent dari data mentah sheet
+        const allUniqueAgents = [...new Set(rawSheetData.map(item => item.agent))].filter(Boolean);
+        
+        const defaultTableData = allUniqueAgents.map(agentName => ({
+            name: agentName,
+            totalDuration: "-", // Kosongkan data durasi total
+            avgDuration: "-"    // Kosongkan data durasi rata-rata
+        }));
+
+        // Render chart kosong/reset dan render tabel versi inisiasi nama saja
+        renderChart([], [], {});
+        renderAgentTable(defaultTableData, {}, false); // Parameter ketiga (false) menyembunyikan Overall Average
+        return; // Hentikan fungsi di sini, jangan lanjut kalkulasi ke bawah
+    }
+
+    // 2. STATE AKTIF: Jika ada filter yang dipilih, jalankan kalkulasi seperti biasa
     const filteredData = rawSheetData.filter(item => {
         const matchAgent = (selectedAgent === "ALL" || item.agent === selectedAgent);
         const matchDay = (selectedDay === "ALL" || item.day === selectedDay);
@@ -199,7 +220,6 @@ function processAndRenderData() {
     const chartAvgMinutes = []; 
     const tableData = [];
 
-    // Deteksi jika user sedang memfilter berdasarkan Week atau Month tertentu
     const isAccumulatedFilter = (selectedWeek !== "ALL" || selectedMonth !== "ALL");
 
     Object.values(agentAggregation).forEach(agent => {
@@ -207,10 +227,8 @@ function processAndRenderData() {
         
         let displayAvgSeconds;
         if (isAccumulatedFilter) {
-            // JIKA FILTER WEEK/MONTH AKTIF: Nilai AVG diubah menjadi penjumlahan total periode tersebut
             displayAvgSeconds = agent.totalDurationSeconds;
         } else {
-            // JIKA FILTER ALL/HARIAN AKTIF: Nilai AVG dihitung rata-rata per hari aktif agen
             displayAvgSeconds = agent.totalDurationSeconds / agent.daysActive;
         }
 
@@ -225,96 +243,11 @@ function processAndRenderData() {
 
     renderChart(chartAgents, chartAvgMinutes, agentAggregation);
     
-    // Aturan Khusus: Baris Overall Average paling bawah HANYA muncul jika filter Agent, Day, dan Week bernilai "ALL"
-    const showOverallAverage = (selectedAgent === "ALL" && selectedDay === "ALL" && selectedWeek === "ALL");
+    // Baris Overall Average bawah akan tampil jika filter dicari berdasarkan kombinasi filter waktu tertentu namun agent diset "ALL"
+    const showOverallAverage = (selectedAgent === "ALL");
     
     renderAgentTable(tableData, agentAggregation, showOverallAverage);
 }
-
-function parseTimeToSeconds(timeStr) {
-    if (!timeStr) return 0;
-    timeStr = timeStr.trim();
-    if (timeStr.includes(':')) {
-        const parts = timeStr.split(':').map(Number);
-        if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-        if (parts.length === 2) return (parts[0] * 60) + parts[1];
-    }
-    return 0;
-}
-
-function formatSecondsToCustomHMS(totalSeconds) {
-    if (isNaN(totalSeconds) || totalSeconds <= 0) return "0m 0s";
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = Math.floor(totalSeconds % 60);
-    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-    return `${minutes}m ${seconds}s`;
-}
-
-function renderChart(agents, avgMinutes, rawAggregation) {
-    const chartStatus = Chart.getChart("ticketChart");
-    if (chartStatus != undefined) chartStatus.destroy();
-
-    new Chart(document.getElementById('ticketChart'), {
-        type: 'bar',
-        data: {
-            labels: agents,
-            datasets: [{
-                data: avgMinutes,
-                backgroundColor: [
-                    'rgba(59, 130, 246, 0.8)',
-                    'rgba(16, 185, 129, 0.8)',
-                    'rgba(245, 158, 11, 0.8)',
-                    'rgba(239, 68, 68, 0.8)',
-                    'rgba(139, 92, 246, 0.8)'
-                ],
-                borderColor: ['#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'],
-                borderWidth: 1,
-                borderRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { 
-                y: { 
-                    beginAtZero: true, 
-                    grid: { color: '#334155' }, 
-                    title: { display: true, text: 'Waktu Respon (Menit)', color: '#94a3b8' },
-                    ticks: { color: '#94a3b8' }
-                }, 
-                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
-            },
-            plugins: { 
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const agentName = context.label;
-                            // Menyesuaikan teks tooltip pada grafik agar selaras dengan tabel
-                            const selectedWeek = document.getElementById('filter-week').value;
-                            const selectedMonth = document.getElementById('filter-month').value;
-                            const isAccumulated = (selectedWeek !== "ALL" || selectedMonth !== "ALL");
-                            
-                            if (isAccumulated) {
-                                return ` Total RT: ${formatSecondsToCustomHMS(rawAggregation[agentName].totalDurationSeconds)}`;
-                            } else {
-                                const avgSec = rawAggregation[agentName].totalDurationSeconds / rawAggregation[agentName].daysActive;
-                                return ` Avg RT: ${formatSecondsToCustomHMS(avgSec)}`;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
-    if (chartHeader) {
-        chartHeader.innerText = `AVG RESPONSE TIME`;
-    }
-}
-
 function renderAgentTable(dataList, rawAggregation, showOverallAverage) {
     const tableBody = document.getElementById('agent-table-body');
     tableBody.innerHTML = ""; 
@@ -324,20 +257,23 @@ function renderAgentTable(dataList, rawAggregation, showOverallAverage) {
         return;
     }
 
-    // 1. Render data per Agent sesuai kondisi filter waktu saat ini
+    // 1. Render baris data per Agent
     dataList.forEach(item => {
+        // Berikan warna hijau bold hanya jika datanya berupa angka durasi asli (bukan '-')
+        const avgColorClass = item.avgDuration === "-" ? "text-slate-500" : "text-emerald-400 font-bold";
+        
         const rowHTML = `
             <tr class="hover:bg-slate-700/50 transition-colors">
                 <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
                 <td class="py-3 px-4 text-right font-mono text-slate-400">${item.totalDuration}</td>
-                <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${item.avgDuration}</td>
+                <td class="py-3 px-4 text-right font-mono ${avgColorClass}">${item.avgDuration}</td>
             </tr>
         `;
         tableBody.insertAdjacentHTML('beforeend', rowHTML);
     });
 
-    // 2. Render baris ringkasan tim "Overall Average" di paling bawah hanya saat filter diizinkan
-    if (showOverallAverage) {
+    // 2. Render baris ringkasan tim "Overall Average" di paling bawah hanya saat filter aktif
+    if (showOverallAverage && Object.keys(rawAggregation).length > 0) {
         let globalTotalSeconds = 0;
         let globalTotalDaysActive = 0;
 
