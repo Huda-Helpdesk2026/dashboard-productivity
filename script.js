@@ -11,6 +11,7 @@ window.addEventListener('load', () => {
 
 async function fetchData() {
     try {
+        // Tambahkan timestamp acak (?cachebust=...) agar data selalu fresh
         const antiCacheUrl = `${csvUrl}&cachebust=${new Date().getTime()}`;
         const response = await fetch(antiCacheUrl);
         const dataText = await response.text();
@@ -18,37 +19,38 @@ async function fetchData() {
         const rows = dataText.split("\n").map(row => row.split(","));
         rawSheetData = []; // Reset penampung global
 
-        // Konversi nama bulan untuk keperluan display filter
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
         for(let i = 1; i < rows.length; i++) {
             const cols = rows[i];
-            // Validasi agar memastikan kolom nama agen (kolom 1 / B) tidak kosong
-            if(cols.length >= 7 && cols[1] && cols[1].trim() !== "") {
+            
+            // Validasi aman: pastikan baris memiliki data dan kolom nama Agen (Indeks 1) tidak kosong
+            if(cols && cols.length >= 7 && cols[1] && cols[1].trim() !== "") {
                 const dateRaw = cols[0].trim().replace(/"/g, ''); // Kolom A: Date
                 
-                // Cari data penanda Tanggal, Bulan, dan Minggu dari objek Date asli Javascript
                 let cleanDateStr = "Unknown";
-                let monthStr = "Unknown";
-                let weekStr = "Unknown";
+                let monthStr = "All Months";
+                let weekStr = "All Weeks";
 
-                if (dateRaw) {
-                    // Normalisasi pemisah tanggal jika menggunakan strip (-) diubah ke slash (/)
+                if (dateRaw && dateRaw.toLowerCase() !== "date") {
+                    // Bersihkan dan pisahkan karakter penanda tanggal
                     const normalizedDate = dateRaw.replace(/-/g, '/');
                     const dateParts = normalizedDate.split('/');
                     
                     if(dateParts.length === 3) {
-                        let day = parseInt(dateParts[0]);
-                        let month = parseInt(dateParts[1]) - 1; // bulan js dimulai dari indeks 0
-                        let year = parseInt(dateParts[2]);
-                        if(year < 100) year += 2000; // handle format tahun 2 digit '26' -> 2026
+                        let day = parseInt(dateParts[0], 10);
+                        let month = parseInt(dateParts[1], 10) - 1; 
+                        let year = parseInt(dateParts[2], 10);
+                        
+                        if(year < 100) year += 2000; // Normalisasi tahun 2 digit '26' -> 2026
 
                         const parsedDate = new Date(year, month, day);
+                        
                         if (!isNaN(parsedDate.getTime())) {
-                            cleanDateStr = dateRaw; // simpan string aslinya untuk filter harian
+                            cleanDateStr = dateRaw; 
                             monthStr = monthNames[parsedDate.getMonth()];
                             
-                            // Hitung perkiraan urutan minggu dalam bulan tersebut
+                            // Logika hitung urutan minggu dalam bulan (1-5)
                             const weekNum = Math.ceil(parsedDate.getDate() / 7);
                             weekStr = `Week ${weekNum}`;
                         }
@@ -59,41 +61,41 @@ async function fetchData() {
                     date: cleanDateStr,
                     month: monthStr,
                     week: weekStr,
-                    agent: cols[1].trim(),
-                    ticket: parseInt(cols[2]) || 0,
+                    agent: cols[1].trim().replace(/"/g, ''),
+                    ticket: parseInt(cols[2], 10) || 0,
                     art: parseTimeToSeconds(cols[3]),
-                    responseCount: parseInt(cols[4]) || 0,
+                    responseCount: parseInt(cols[4], 10) || 0,
                     aht: parseTimeToSeconds(cols[5]),
                     timeSpan: parseTimeToSeconds(cols[6])
                 });
             }
         }
 
-        // Generate isi pilihan option pada menu dropdown filter secara otomatis sesuai isi sheet
+        // Jalankan pengisian komponen dropdown filter
         populateFilterDropdowns();
 
+        // Tampilkan dashboard dan sembunyikan loader
         document.getElementById('loader').style.display = 'none';
         document.getElementById('filter-container').classList.remove('hidden');
         document.getElementById('dashboard-content').classList.remove('hidden');
 
-        // Proses render data awal (menampilkan semua data sebelum difilter)
+        // Render visualisasi awal
         processAndRenderData();
 
     } catch (error) {
         console.error("Gagal memproses data:", error);
-        document.getElementById('loader').innerText = "Gagal memproses sinkronisasi data Sheets.";
+        document.getElementById('loader').innerText = "Gagal memproses sinkronisasi data Sheets. Periksa koneksi atau URL CSV Anda.";
     }
 }
 
-// Fungsi mendeteksi data unik untuk mengisi list opsi dropdown filter
 function populateFilterDropdowns() {
     const months = new Set();
     const weeks = new Set();
     const dates = new Set();
 
     rawSheetData.forEach(item => {
-        if(item.month !== "Unknown") months.add(item.month);
-        if(item.week !== "Unknown") weeks.add(item.week);
+        if(item.month !== "Unknown" && item.month !== "All Months") months.add(item.month);
+        if(item.week !== "Unknown" && item.week !== "All Weeks") weeks.add(item.week);
         if(item.date !== "Unknown") dates.add(item.date);
     });
 
@@ -101,17 +103,19 @@ function populateFilterDropdowns() {
     const selectWeek = document.getElementById('filter-week');
     const selectDate = document.getElementById('filter-date');
 
-    // Mengurutkan & memasukkan opsi ke Dropdown Bulan
+    // Reset opsi bawaan agar tidak double saat reload
+    selectMonth.innerHTML = '<option value="ALL">All Months</option>';
+    selectWeek.innerHTML = '<option value="ALL">All Weeks</option>';
+    selectDate.innerHTML = '<option value="ALL">All Dates</option>';
+
     Array.from(months).forEach(m => {
         selectMonth.insertAdjacentHTML('beforeend', `<option value="${m}">${m}</option>`);
     });
 
-    // Mengurutkan & memasukkan opsi ke Dropdown Minggu
     Array.from(weeks).sort().forEach(w => {
         selectWeek.insertAdjacentHTML('beforeend', `<option value="${w}">${w}</option>`);
     });
 
-    // Mengurutkan & memasukkan opsi ke Dropdown Tanggal Spesifik
     Array.from(dates).sort().forEach(d => {
         selectDate.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`);
     });
@@ -120,17 +124,16 @@ function populateFilterDropdowns() {
 function setupFilterListeners() {
     const filters = ['filter-month', 'filter-week', 'filter-date'];
     filters.forEach(id => {
-        document.getElementById(id).addEventListener('change', processAndRenderData);
+        const el = document.getElementById(id);
+        if(el) el.addEventListener('change', processAndRenderData);
     });
 }
 
-// Fungsi inti menyaring data berdasarkan filter aktif, lalu mengirim ke visualisasi tabel/grafik
 function processAndRenderData() {
     const selectedMonth = document.getElementById('filter-month').value;
     const selectedWeek = document.getElementById('filter-week').value;
     const selectedDate = document.getElementById('filter-date').value;
 
-    // Lakukan pencocokan kriteria filter
     const filteredData = rawSheetData.filter(item => {
         const matchMonth = (selectedMonth === "ALL" || item.month === selectedMonth);
         const matchWeek = (selectedWeek === "ALL" || item.week === selectedWeek);
@@ -138,7 +141,6 @@ function processAndRenderData() {
         return matchMonth && matchWeek && matchDate;
     });
 
-    // Agregasikan/Satukan data agen yang terfilter
     const agentAggregation = {};
 
     filteredData.forEach(item => {
@@ -180,7 +182,6 @@ function processAndRenderData() {
         });
     });
 
-    // Tampilkan data akhir ke grafik dan tabel
     renderTicketChart(agents, tickets);
     renderAgentTable(tableData);
 }
@@ -241,7 +242,7 @@ function renderAgentTable(dataList) {
     tableBody.innerHTML = ""; 
     
     if(dataList.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-500">Tidak ada data agen di periode tanggal ini.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-500">Tidak ada data agen di periode ini.</td></tr>`;
         return;
     }
 
