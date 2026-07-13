@@ -43,7 +43,7 @@ async function fetchData() {
         // Ambil header untuk mendeteksi posisi nama-nama Agent secara dinamis
         const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, ''));
         
-        // Sesuai gambar: Kolom A=Date(0), B=Day(1), C=Month(2), D=Week(3)
+        // Kolom A=Date(0), B=Day(1), C=Month(2), D=Week(3)
         // Agent dimulai dari Indeks 4 (Kolom E) sampai sebelum kolom 'Average'
         const agentColumns = [];
         for (let j = 4; j < headers.length; j++) {
@@ -67,7 +67,7 @@ async function fetchData() {
             // Lewati jika baris kosong atau baris duplikat header
             if (dateVal.toLowerCase() === 'date' || !dateVal) continue;
 
-            // Karena format mendatar, pecah baris ini menjadi per agent agar bisa difilter fleksibel
+            // Pecah baris mendatar menjadi format per agent agar fleksibel difilter
             agentColumns.forEach(ag => {
                 const durationStr = cols[ag.index] ? cols[ag.index].replace(/"/g, '') : "";
                 
@@ -180,7 +180,6 @@ function processAndRenderData() {
 
     // 2. STATE DEFAULT: Jika semua filter waktu masih bernilai "All"
     if (!anyFilterTimeActive) {
-        // Ambil daftar nama agen unik langsung dari data mentah
         const allUniqueAgents = [...new Set(rawSheetData.map(item => item.agent))].filter(Boolean);
         
         const defaultTableData = allUniqueAgents.map(agentName => ({
