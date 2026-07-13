@@ -166,15 +166,19 @@ function setupFilterListeners() {
 // FORMULA UTAMA & PENGOLAHAN DATA DASHBOARD
 // ==========================================
 
+// ==========================================
+// FORMULA FILTER MURNI DASHBOARD (DAY vs PERIOD)
+// ==========================================
+
 function processAndRenderData() {
-    // 1. Ambil value filter, ubah ke huruf kecil dan hapus spasi berlebih
+    // 1. Ambil nilai filter dari dropdown
     const selectedAgent = document.getElementById('filter-agent').value.toLowerCase().trim();
     const selectedDay = document.getElementById('filter-day').value.toLowerCase().trim();
     const selectedWeek = document.getElementById('filter-week').value.toLowerCase().trim();
     const selectedMonth = document.getElementById('filter-month').value.toLowerCase().trim();
     const selectedDate = document.getElementById('filter-date').value.toLowerCase().trim();
 
-    // Cek apakah ada filter waktu yang sedang aktif digunakan (nilainya TIDAK mengandung kata "all")
+    // Cek apakah ada filter waktu yang sedang aktif digunakan oleh user
     const anyFilterTimeActive = (
         !selectedDay.includes("all") || 
         !selectedWeek.includes("all") || 
@@ -182,25 +186,23 @@ function processAndRenderData() {
         !selectedDate.includes("all")
     );
 
-    // 2. STATE DEFAULT: Jika semua filter waktu masih bernilai "All ..."
+    // 2. STATE DEFAULT: Jika semua filter waktu masih bernilai "All"
     if (!anyFilterTimeActive) {
-        // Ambil daftar nama agen unik langsung dari database mentah
+        // Ambil daftar nama agen unik langsung dari data mentah
         const allUniqueAgents = [...new Set(rawSheetData.map(item => item.agent))].filter(Boolean);
         
-        // Buat struktur data kosong (hanya nama agen, nilai diisi strip)
         const defaultTableData = allUniqueAgents.map(agentName => ({
             name: agentName,
             totalDuration: "-", 
             avgDuration: "-"    
         }));
 
-        // Reset Grafik dan Render Tabel Kosong tanpa memunculkan baris Overall Average
         renderChart([], [], {});
         renderAgentTable(defaultTableData, {}, false); 
-        return; // Kunci fungsi di sini agar tidak melakukan kalkulasi data di bawah
+        return; 
     }
 
-    // 3. STATE AKTIF: Jika user telah memilih salah satu filter waktu
+    // 3. STATE AKTIF: Menyaring baris data murni berdasarkan filter waktu
     const filteredData = rawSheetData.filter(item => {
         const matchAgent = (selectedAgent.includes("all") || item.agent.toLowerCase() === selectedAgent);
         const matchDay = (selectedDay.includes("all") || item.day.toLowerCase() === selectedDay);
@@ -213,7 +215,6 @@ function processAndRenderData() {
     const agentAggregation = {};
 
     filteredData.forEach(item => {
-        // Abaikan data durasi jika kosong atau tidak valid agar pembagi rata-rata akurat
         if (!item.duration || item.duration <= 0) return;
 
         if (!agentAggregation[item.agent]) {
@@ -232,19 +233,20 @@ function processAndRenderData() {
     const chartAvgMinutes = []; 
     const tableData = [];
 
-    // Deteksi apakah sedang dalam akumulasi filter panjang (Week / Month)
-    const isAccumulatedFilter = (!selectedWeek.includes("all") || !selectedMonth.includes("all"));
+    // Deteksi apakah user sedang memfilter menggunakan Week atau Month
+    const isPeriodFilter = (!selectedWeek.includes("all") || !selectedMonth.includes("all"));
 
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
         
         let displayAvgSeconds;
-        if (isAccumulatedFilter) {
-            // ATURAN 1: Filter Week/Month aktif -> AVG berganti menampilkan Akumulasi Total Durasi periode tersebut
-            displayAvgSeconds = agent.totalDurationSeconds;
-        } else {
-            // ATURAN 2: Filter harian/All aktif -> AVG menampilkan murni Rata-Rata per hari pengerjaan agen
+        
+        if (isPeriodFilter) {
+            // JIKA FILTER WEEK/MONTH: Hitung rata-rata akumulasi (Total Detik / Jumlah Hari Aktif)
             displayAvgSeconds = agent.totalDurationSeconds / agent.daysActive;
+        } else {
+            // JIKA FILTER DAY/DATE: Tampilkan durasi asli sesuai baris di sheet (Tanpa dibagi hari aktif)
+            displayAvgSeconds = agent.totalDurationSeconds;
         }
 
         chartAvgMinutes.push(parseFloat((displayAvgSeconds / 60).toFixed(2))); 
@@ -256,14 +258,12 @@ function processAndRenderData() {
         });
     });
 
-    // Render komponen grafik visual
-    renderChart(chartAgents, chartAvgMinutes, agentAggregation);
+    renderChart(chartAgents, chartAvgMinutes, agentAggregation, isPeriodFilter);
     
-    // Baris penutup Overall Average bawah hanya akan tampil jika opsi agent diset "All Agents"
+    // Baris penutup bawah akan muncul jika filter agent diset "All Agents"
     const showOverallAverage = selectedAgent.includes("all");
     
-    // Render komponen tabel data
-    renderAgentTable(tableData, agentAggregation, showOverallAverage);
+    renderAgentTable(tableData, agentAggregation, showOverallAverage, isPeriodFilter);
 }
 
 // ==========================================
@@ -294,7 +294,7 @@ function formatSecondsToCustomHMS(totalSeconds) {
 // RENDER COMPONENT FUNCTIONS (CHART & TABLE)
 // ==========================================
 
-function renderChart(agents, avgMinutes, rawAggregation) {
+function renderChart(agents, avgMinutes, rawAggregation, isPeriodFilter) {
     const chartStatus = Chart.getChart("ticketChart");
     if (chartStatus != undefined) chartStatus.destroy();
 
@@ -334,15 +334,11 @@ function renderChart(agents, avgMinutes, rawAggregation) {
                     callbacks: {
                         label: function(context) {
                             const agentName = context.label;
-                            const selectedWeek = document.getElementById('filter-week').value.toLowerCase();
-                            const selectedMonth = document.getElementById('filter-month').value.toLowerCase();
-                            const isAccumulated = (!selectedWeek.includes("all") || !selectedMonth.includes("all"));
-                            
-                            if (isAccumulated) {
-                                return ` Total RT: ${formatSecondsToCustomHMS(rawAggregation[agentName].totalDurationSeconds)}`;
-                            } else {
+                            if (isPeriodFilter) {
                                 const avgSec = rawAggregation[agentName].totalDurationSeconds / rawAggregation[agentName].daysActive;
                                 return ` Avg RT: ${formatSecondsToCustomHMS(avgSec)}`;
+                            } else {
+                                return ` RT: ${formatSecondsToCustomHMS(rawAggregation[agentName].totalDurationSeconds)}`;
                             }
                         }
                     }
@@ -354,6 +350,55 @@ function renderChart(agents, avgMinutes, rawAggregation) {
     const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
     if (chartHeader) {
         chartHeader.innerText = `AVG RESPONSE TIME`;
+    }
+}
+
+function renderAgentTable(dataList, rawAggregation, showOverallAverage, isPeriodFilter) {
+    const tableBody = document.getElementById('agent-table-body');
+    tableBody.innerHTML = ""; 
+    
+    if(dataList.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
+        return;
+    }
+
+    // 1. Render data per baris Agent
+    dataList.forEach(item => {
+        const avgColorClass = item.avgDuration === "-" ? "text-slate-500" : "text-emerald-400 font-bold";
+        
+        const rowHTML = `
+            <tr class="hover:bg-slate-700/50 transition-colors">
+                <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-400">${item.totalDuration}</td>
+                <td class="py-3 px-4 text-right font-mono ${avgColorClass}">${item.avgDuration}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', rowHTML);
+    });
+
+    // 2. Render baris akumulasi total tim "Overall Average" di paling bawah tabel
+    if (showOverallAverage && Object.keys(rawAggregation).length > 0) {
+        let globalTotalSeconds = 0;
+        let globalTotalDaysActive = 0;
+
+        Object.values(rawAggregation).forEach(agent => {
+            globalTotalSeconds += agent.totalDurationSeconds;
+            globalTotalDaysActive += agent.daysActive;
+        });
+
+        // Logika Overall Average bawah ikut menyesuaikan jenis filter waktu yang aktif
+        const globalAvgSeconds = isPeriodFilter 
+            ? (globalTotalDaysActive > 0 ? (globalTotalSeconds / globalTotalDaysActive) : 0)
+            : globalTotalSeconds; // Jika harian, tampilkan total akumulasi baris tersebut
+
+        const totalRowHTML = `
+            <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
+                <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
+                <td class="py-3 px-4 text-right font-mono text-amber-400 text-base font-bold">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
     }
 }
 
