@@ -1,5 +1,5 @@
 // URL Google Sheets CSV hasil dari 'Publish to Web'
-const csvUrl = "SALIN_URL_CSV_GOOGLE_SHEETS_DISINI";
+const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCLXvz4_F7EfUppPoKWSKQawlesCjiYHhceQCIEDoV8ntbDjFrvKUorP416AGydpWYmxWlOLA3b1JL/pub?gid=549661576&single=true&output=csv";
 
 window.addEventListener('load', () => {
     fetchData();
