@@ -162,46 +162,58 @@ function setupFilterListeners() {
     });
 }
 
+// ==========================================
+// FORMULA UTAMA & PENGOLAHAN DATA DASHBOARD
+// ==========================================
+
 function processAndRenderData() {
-    const selectedAgent = document.getElementById('filter-agent').value;
-    const selectedDay = document.getElementById('filter-day').value;
-    const selectedWeek = document.getElementById('filter-week').value;
-    const selectedMonth = document.getElementById('filter-month').value;
-    const selectedDate = document.getElementById('filter-date').value;
+    // 1. Ambil value filter, ubah ke huruf kecil dan hapus spasi berlebih
+    const selectedAgent = document.getElementById('filter-agent').value.toLowerCase().trim();
+    const selectedDay = document.getElementById('filter-day').value.toLowerCase().trim();
+    const selectedWeek = document.getElementById('filter-week').value.toLowerCase().trim();
+    const selectedMonth = document.getElementById('filter-month').value.toLowerCase().trim();
+    const selectedDate = document.getElementById('filter-date').value.toLowerCase().trim();
 
-    // Cek apakah ada salah satu filter waktu yang sedang aktif digunakan oleh user
-    const anyFilterTimeActive = (selectedDay !== "ALL" || selectedWeek !== "ALL" || selectedMonth !== "ALL" || selectedDate !== "ALL");
+    // Cek apakah ada filter waktu yang sedang aktif digunakan (nilainya TIDAK mengandung kata "all")
+    const anyFilterTimeActive = (
+        !selectedDay.includes("all") || 
+        !selectedWeek.includes("all") || 
+        !selectedMonth.includes("all") || 
+        !selectedDate.includes("all")
+    );
 
-    // 1. STATE DEFAULT: Jika tidak ada filter waktu yang dipilih sama sekali
+    // 2. STATE DEFAULT: Jika semua filter waktu masih bernilai "All ..."
     if (!anyFilterTimeActive) {
-        // Ambil daftar unik nama seluruh agent dari data mentah sheet
+        // Ambil daftar nama agen unik langsung dari database mentah
         const allUniqueAgents = [...new Set(rawSheetData.map(item => item.agent))].filter(Boolean);
         
+        // Buat struktur data kosong (hanya nama agen, nilai diisi strip)
         const defaultTableData = allUniqueAgents.map(agentName => ({
             name: agentName,
-            totalDuration: "-", // Kosongkan data durasi total
-            avgDuration: "-"    // Kosongkan data durasi rata-rata
+            totalDuration: "-", 
+            avgDuration: "-"    
         }));
 
-        // Render chart kosong/reset dan render tabel versi inisiasi nama saja
+        // Reset Grafik dan Render Tabel Kosong tanpa memunculkan baris Overall Average
         renderChart([], [], {});
-        renderAgentTable(defaultTableData, {}, false); // Parameter ketiga (false) menyembunyikan Overall Average
-        return; // Hentikan fungsi di sini, jangan lanjut kalkulasi ke bawah
+        renderAgentTable(defaultTableData, {}, false); 
+        return; // Kunci fungsi di sini agar tidak melakukan kalkulasi data di bawah
     }
 
-    // 2. STATE AKTIF: Jika ada filter yang dipilih, jalankan kalkulasi seperti biasa
+    // 3. STATE AKTIF: Jika user telah memilih salah satu filter waktu
     const filteredData = rawSheetData.filter(item => {
-        const matchAgent = (selectedAgent === "ALL" || item.agent === selectedAgent);
-        const matchDay = (selectedDay === "ALL" || item.day === selectedDay);
-        const matchWeek = (selectedWeek === "ALL" || item.week === selectedWeek);
-        const matchMonth = (selectedMonth === "ALL" || item.month === selectedMonth);
-        const matchDate = (selectedDate === "ALL" || item.date === selectedDate);
+        const matchAgent = (selectedAgent.includes("all") || item.agent.toLowerCase() === selectedAgent);
+        const matchDay = (selectedDay.includes("all") || item.day.toLowerCase() === selectedDay);
+        const matchWeek = (selectedWeek.includes("all") || item.week.toLowerCase() === selectedWeek);
+        const matchMonth = (selectedMonth.includes("all") || item.month.toLowerCase() === selectedMonth);
+        const matchDate = (selectedDate.includes("all") || item.date.toLowerCase() === selectedDate);
         return matchAgent && matchDay && matchWeek && matchMonth && matchDate;
     });
 
     const agentAggregation = {};
 
     filteredData.forEach(item => {
+        // Abaikan data durasi jika kosong atau tidak valid agar pembagi rata-rata akurat
         if (!item.duration || item.duration <= 0) return;
 
         if (!agentAggregation[item.agent]) {
@@ -220,15 +232,18 @@ function processAndRenderData() {
     const chartAvgMinutes = []; 
     const tableData = [];
 
-    const isAccumulatedFilter = (selectedWeek !== "ALL" || selectedMonth !== "ALL");
+    // Deteksi apakah sedang dalam akumulasi filter panjang (Week / Month)
+    const isAccumulatedFilter = (!selectedWeek.includes("all") || !selectedMonth.includes("all"));
 
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
         
         let displayAvgSeconds;
         if (isAccumulatedFilter) {
+            // ATURAN 1: Filter Week/Month aktif -> AVG berganti menampilkan Akumulasi Total Durasi periode tersebut
             displayAvgSeconds = agent.totalDurationSeconds;
         } else {
+            // ATURAN 2: Filter harian/All aktif -> AVG menampilkan murni Rata-Rata per hari pengerjaan agen
             displayAvgSeconds = agent.totalDurationSeconds / agent.daysActive;
         }
 
@@ -241,12 +256,152 @@ function processAndRenderData() {
         });
     });
 
+    // Render komponen grafik visual
     renderChart(chartAgents, chartAvgMinutes, agentAggregation);
     
-    // Baris Overall Average bawah akan tampil jika filter dicari berdasarkan kombinasi filter waktu tertentu namun agent diset "ALL"
-    const showOverallAverage = (selectedAgent === "ALL");
+    // Baris penutup Overall Average bawah hanya akan tampil jika opsi agent diset "All Agents"
+    const showOverallAverage = selectedAgent.includes("all");
     
+    // Render komponen tabel data
     renderAgentTable(tableData, agentAggregation, showOverallAverage);
+}
+
+// ==========================================
+// UTILITY/HELPER FUNCTIONS (PARSING & FORMAT)
+// ==========================================
+
+function parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    timeStr = timeStr.trim();
+    if (timeStr.includes(':')) {
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+        if (parts.length === 2) return (parts[0] * 60) + parts[1];
+    }
+    return 0;
+}
+
+function formatSecondsToCustomHMS(totalSeconds) {
+    if (isNaN(totalSeconds) || totalSeconds <= 0) return "0m 0s";
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+}
+
+// ==========================================
+// RENDER COMPONENT FUNCTIONS (CHART & TABLE)
+// ==========================================
+
+function renderChart(agents, avgMinutes, rawAggregation) {
+    const chartStatus = Chart.getChart("ticketChart");
+    if (chartStatus != undefined) chartStatus.destroy();
+
+    new Chart(document.getElementById('ticketChart'), {
+        type: 'bar',
+        data: {
+            labels: agents,
+            datasets: [{
+                data: avgMinutes,
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(139, 92, 246, 0.8)'
+                ],
+                borderColor: ['#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'],
+                borderWidth: 1,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { 
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: '#334155' }, 
+                    title: { display: true, text: 'Waktu Respon (Menit)', color: '#94a3b8' },
+                    ticks: { color: '#94a3b8' }
+                }, 
+                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
+            },
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const agentName = context.label;
+                            const selectedWeek = document.getElementById('filter-week').value.toLowerCase();
+                            const selectedMonth = document.getElementById('filter-month').value.toLowerCase();
+                            const isAccumulated = (!selectedWeek.includes("all") || !selectedMonth.includes("all"));
+                            
+                            if (isAccumulated) {
+                                return ` Total RT: ${formatSecondsToCustomHMS(rawAggregation[agentName].totalDurationSeconds)}`;
+                            } else {
+                                const avgSec = rawAggregation[agentName].totalDurationSeconds / rawAggregation[agentName].daysActive;
+                                return ` Avg RT: ${formatSecondsToCustomHMS(avgSec)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
+    if (chartHeader) {
+        chartHeader.innerText = `AVG RESPONSE TIME`;
+    }
+}
+
+function renderAgentTable(dataList, rawAggregation, showOverallAverage) {
+    const tableBody = document.getElementById('agent-table-body');
+    tableBody.innerHTML = ""; 
+    
+    if(dataList.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
+        return;
+    }
+
+    // 1. Render data per baris Agent
+    dataList.forEach(item => {
+        // Cek jika datanya masih berupa tanda strip (state default) atau sudah berupa angka
+        const avgColorClass = item.avgDuration === "-" ? "text-slate-500" : "text-emerald-400 font-bold";
+        
+        const rowHTML = `
+            <tr class="hover:bg-slate-700/50 transition-colors">
+                <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-400">${item.totalDuration}</td>
+                <td class="py-3 px-4 text-right font-mono ${avgColorClass}">${item.avgDuration}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', rowHTML);
+    });
+
+    // 2. Render baris akumulasi total tim "Overall Average" di paling bawah tabel jika diizinkan
+    if (showOverallAverage && Object.keys(rawAggregation).length > 0) {
+        let globalTotalSeconds = 0;
+        let globalTotalDaysActive = 0;
+
+        Object.values(rawAggregation).forEach(agent => {
+            globalTotalSeconds += agent.totalDurationSeconds;
+            globalTotalDaysActive += agent.daysActive;
+        });
+
+        const globalAvgSeconds = globalTotalDaysActive > 0 ? (globalTotalSeconds / globalTotalDaysActive) : 0;
+
+        const totalRowHTML = `
+            <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
+                <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
+                <td class="py-3 px-4 text-right font-mono text-amber-400 text-base font-bold">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
+    }
 }
 function renderAgentTable(dataList, rawAggregation, showOverallAverage) {
     const tableBody = document.getElementById('agent-table-body');
