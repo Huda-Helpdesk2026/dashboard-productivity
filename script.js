@@ -10,15 +10,11 @@ async function fetchData() {
         const response = await fetch(csvUrl);
         const dataText = await response.text();
         
-        // Parsing data CSV sederhana ke Array
         const rows = dataText.split("\n").map(row => row.split(","));
         
-        // Ambil baris data (Lewati baris 0 jika itu header)
-        // Data Anda: Date, Agent, Ticket, ART, Response, AHT, Time Span
         const agents = [];
         const tickets = [];
         const arts = [];
-        const responses = [];
         const ahts = [];
         const timeSpans = [];
 
@@ -28,19 +24,13 @@ async function fetchData() {
                 agents.push(cols[1]); // Kolom B: Agent
                 tickets.push(parseInt(cols[2]) || 0); // Kolom C: Ticket
                 
-                // Rumus Konversi: (Nilai / 86400) * 86400 / 60 = Nilai * 24 * 60 = Nilai * 1440
-                const artMinutes = (parseFloat(cols[3]) || 0) * 1440;
-                const ahtMinutes = (parseFloat(cols[5]) || 0) * 1440;
-                const timeSpanMinutes = (parseFloat(cols[6]) || 0) * 1440;
-                
-                arts.push(parseFloat(artMinutes.toFixed(1)));
-                responses.push(parseInt(cols[4]) || 0);
-                ahts.push(parseFloat(ahtMinutes.toFixed(1)));
-                timeSpans.push(parseFloat(timeSpanMinutes.toFixed(1)));
+                // Konversi data kolom waktu menjadi DETIK murni terlebih dahulu
+                arts.push(parseTimeToSeconds(cols[3]));      // Kolom D: ART
+                ahts.push(parseTimeToSeconds(cols[5]));      // Kolom F: AHT
+                timeSpans.push(parseTimeToSeconds(cols[6])); // Kolom G: Time Span
             }
         }
 
-        // Tampilkan dashboard, sembunyikan loader
         document.getElementById('loader').style.display = 'none';
         document.getElementById('dashboard-content').classList.remove('hidden');
 
@@ -50,6 +40,44 @@ async function fetchData() {
         console.error("Gagal memuat data:", error);
         document.getElementById('loader').innerText = "Gagal memproses sinkronisasi data Sheets.";
     }
+}
+
+// Fungsi bantu untuk mengubah inputan Google Sheets menjadi total detik murni
+function parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    timeStr = timeStr.trim().replace(/"/g, ''); // bersihkan tanda kutip jika ada
+    
+    // Jika formatnya HH:MM:SS atau MM:SS (berisi titik dua)
+    if (timeStr.includes(':')) {
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 3) {
+            return (parts[0] * 3600) + (parts[1] * 60) + parts[2]; // J:M:D
+        } else if (parts.length === 2) {
+            return (parts[0] * 60) + parts[1]; // M:D
+        }
+    }
+    
+    // Jika data berupa angka desimal mentah bawaan sistem serial Sheets
+    const num = parseFloat(timeStr);
+    if (!isNaN(num)) {
+        // Jika angkanya sangat besar (mungkin detik mentah), jika kecil (< 1) berarti serial day pecahan Sheets
+        if (num < 1) {
+            return Math.round(num * 86400); 
+        }
+        return Math.round(num); // Asumsi sudah dalam bentuk detik murni
+    }
+    return 0;
+}
+
+// Fungsi bantu untuk mengubah total detik menjadi format string teks "JJ:MM:DD"
+function formatSecondsToHMS(totalSeconds) {
+    if (isNaN(totalSeconds) || totalSeconds <= 0) return "00:00:00";
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
 function renderCharts(agents, tickets, arts, ahts, timeSpans) {
@@ -72,26 +100,29 @@ function renderCharts(agents, tickets, arts, ahts, timeSpans) {
         }
     });
 
-    // 2. Chart Komparasi Durasi Waktu (Grouped Bar Chart)
+    // 2. Chart Komparasi Durasi Waktu (Diubah sumbu Y-nya menjadi skala MENIT agar grafik tidak kepanjangan)
     new Chart(document.getElementById('timeMetricsChart'), {
         type: 'bar',
         data: {
             labels: agents,
             datasets: [
                 {
-                    label: 'ART (Menit)',
-                    data: arts,
-                    backgroundColor: '#10b981'
+                    label: 'ART',
+                    data: arts.map(s => parseFloat((s / 60).toFixed(2))), // ubah ke menit untuk tinggi batang grafik
+                    backgroundColor: '#10b981',
+                    rawSeconds: arts // simpan data detik asli untuk tooltip
                 },
                 {
-                    label: 'AHT (Menit)',
-                    data: ahts,
-                    backgroundColor: '#ef4444'
+                    label: 'AHT',
+                    data: ahts.map(s => parseFloat((s / 60).toFixed(2))),
+                    backgroundColor: '#ef4444',
+                    rawSeconds: ahts
                 },
                 {
-                    label: 'Time Span (Menit)',
-                    data: timeSpans,
-                    backgroundColor: '#f59e0b'
+                    label: 'Time Span',
+                    data: timeSpans.map(s => parseFloat((s / 60).toFixed(2))),
+                    backgroundColor: '#f59e0b',
+                    rawSeconds: timeSpans
                 }
             ]
         },
@@ -101,10 +132,24 @@ function renderCharts(agents, tickets, arts, ahts, timeSpans) {
             scales: { 
                 y: { 
                     beginAtZero: true, 
-                    title: { display: true, text: 'Menit', color: '#94a3b8' },
+                    title: { display: true, text: 'Skala Durasi (Menit)', color: '#94a3b8' },
                     grid: { color: '#334155' } 
                 }, 
                 x: { grid: { display: false } } 
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        // Kustomisasi Tooltip Pop-up agar memunculkan format teks 00:00:00
+                        label: function(context) {
+                            const dataset = context.dataset;
+                            const index = context.dataIndex;
+                            const totalSecs = dataset.rawSeconds[index];
+                            const hmsString = formatSecondsToHMS(totalSecs);
+                            return `${dataset.label}: ${hmsString}`;
+                        }
+                    }
+                }
             }
         }
     });
