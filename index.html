@@ -13,31 +13,45 @@
 
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
-        <header class="mb-6 border-b border-slate-800 pb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <header class="mb-6 border-b border-slate-800 pb-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-white tracking-tight">Agent Dashboard</h1>
                 <p class="text-slate-400 text-sm mt-1">Real-time productivity & time metrics monitoring</p>
             </div>
             
-            <!-- Filter Kontrol Kanan -->
+            <!-- Kontainer Filter Lengkap -->
             <div id="filter-container" class="hidden flex flex-wrap items-center gap-3 bg-slate-800 p-3 rounded-lg border border-slate-700">
-                <!-- Filter Bulan -->
+                <!-- Filter Agent -->
                 <div class="flex flex-col">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Month</label>
-                    <select id="filter-month" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-32">
-                        <option value="ALL">All Months</option>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Agent</label>
+                    <select id="filter-agent" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-32">
+                        <option value="ALL">All Agents</option>
                     </select>
                 </div>
-                <!-- Filter Minggu -->
+                <!-- Filter Day -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Day</label>
+                    <select id="filter-day" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-28">
+                        <option value="ALL">All Days</option>
+                    </select>
+                </div>
+                <!-- Filter Week -->
                 <div class="flex flex-col">
                     <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Week</label>
                     <select id="filter-week" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-28">
                         <option value="ALL">All Weeks</option>
                     </select>
                 </div>
-                <!-- Filter Tanggal Spesifik -->
+                <!-- Filter Month -->
                 <div class="flex flex-col">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Specific Date</label>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Month</label>
+                    <select id="filter-month" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-28">
+                        <option value="ALL">All Months</option>
+                    </select>
+                </div>
+                <!-- Filter Date -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date</label>
                     <select id="filter-date" class="bg-slate-900 text-slate-200 text-xs rounded border border-slate-600 p-1.5 focus:outline-none focus:border-blue-500 w-32">
                         <option value="ALL">All Dates</option>
                     </select>
@@ -59,7 +73,7 @@
                 <div class="h-80"><canvas id="ticketChart"></canvas></div>
             </div>
 
-            <!-- Sisi Kanan: Tabel Metrik Waktu Detail Per Agent -->
+            <!-- Sisi Kanan: Tabel Metrik Detail Per Agent -->
             <div class="lg:col-span-2 bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-xl flex flex-col">
                 <h3 class="text-lg font-semibold text-slate-200 mb-4 tracking-wide">METRIK WAKTU AGENT (DURASI)</h3>
                 
@@ -68,6 +82,7 @@
                         <thead>
                             <tr class="border-b border-slate-700 text-slate-400 font-medium">
                                 <th class="py-3 px-4">NAME</th>
+                                <th class="py-3 px-4 text-center">TICKET</th>
                                 <th class="py-3 px-4 text-center">RESPONSE</th>
                                 <th class="py-3 px-4 text-right">ART</th>
                                 <th class="py-3 px-4 text-right">AHT</th>
