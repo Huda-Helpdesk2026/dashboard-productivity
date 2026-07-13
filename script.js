@@ -126,11 +126,32 @@ function populateFilterDropdowns() {
     selectMonth.innerHTML = '<option value="ALL">All Months</option>';
     selectDate.innerHTML = '<option value="ALL">All Dates</option>';
 
+    // 1. Urutkan Agen secara Alfabetis biasa
     Array.from(agents).sort().forEach(a => selectAgent.insertAdjacentHTML('beforeend', `<option value="${a}">${a}</option>`));
-    Array.from(days).sort().forEach(d => selectDay.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`));
+    
+    // 2. Urutkan Nama Hari sesuai urutan kalender mingguan
+    const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    Array.from(days).sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b)).forEach(d => selectDay.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`));
+    
+    // 3. Urutkan Minggu secara Alfabetis (Week 1, Week 2, dst)
     Array.from(weeks).sort().forEach(w => selectWeek.insertAdjacentHTML('beforeend', `<option value="${w}">${w}</option>`));
-    Array.from(months).sort().forEach(m => selectMonth.insertAdjacentHTML('beforeend', `<option value="${m}">${m}</option>`));
-    Array.from(dates).sort().forEach(d => selectDate.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`));
+    
+    // 4. Urutkan Nama Bulan sesuai urutan kalender tahunan
+    const monthOrder = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    Array.from(months).sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)).forEach(m => selectMonth.insertAdjacentHTML('beforeend', `<option value="${m}">${m}</option>`));
+    
+    // 5. PERBAIKAN UTAMA: Mengurutkan Tanggal DD/MM/YY berdasarkan kronologi waktu kalender asli
+    Array.from(dates).sort((a, b) => {
+        const partsA = a.split('/');
+        const partsB = b.split('/');
+        
+        // Buat objek tanggal standar (Tahun, Bulan [0-11], Hari) untuk dibandingkan nilai timestamp-nya
+        // Masukkan angka '20' sebelum YY agar terbaca sebagai tahun 2026 ke atas
+        const dateA = new Date(parseInt('20' + partsA[2]), parseInt(partsA[1]) - 1, parseInt(partsA[0]));
+        const dateB = new Date(parseInt('20' + partsB[2]), parseInt(partsB[1]) - 1, parseInt(partsB[0]));
+        
+        return dateA - dateB;
+    }).forEach(d => selectDate.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`));
 }
 
 function setupFilterListeners() {
@@ -219,13 +240,27 @@ function renderChart(agents, activities) {
     const chartStatus = Chart.getChart("ticketChart");
     if (chartStatus != undefined) chartStatus.destroy();
 
+    // Hitung total tiket keseluruhan yang sedang aktif di filter untuk ditampilkan di judul grafik
+    const totalTicketsActive = activities.reduce((a, b) => a + b, 0);
+
     new Chart(document.getElementById('ticketChart'), {
         type: 'bar',
         data: {
             labels: agents,
             datasets: [{
+                label: 'Jumlah Tiket',
                 data: activities,
-                backgroundColor: '#3b82f6',
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',   // Blue
+                    'rgba(16, 185, 129, 0.8)',   // Emerald
+                    'rgba(245, 158, 11, 0.8)',   // Amber
+                    'rgba(239, 68, 68, 0.8)',    // Red
+                    'rgba(139, 92, 246, 0.8)'    // Purple
+                ],
+                borderColor: [
+                    '#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'
+                ],
+                borderWidth: 1,
                 borderRadius: 6
             }]
         },
@@ -233,14 +268,36 @@ function renderChart(agents, activities) {
             responsive: true,
             maintainAspectRatio: false,
             scales: { 
-                y: { beginAtZero: true, grid: { color: '#334155' }, title: { display: true, text: 'Frekuensi Aktivitas', color: '#94a3b8' } }, 
-                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: '#334155' }, 
+                    ticks: { color: '#94a3b8', stepSize: 1 } // Menggunakan angka bulat untuk hitungan tiket
+                }, 
+                x: { 
+                    grid: { display: false }, 
+                    ticks: { color: '#94a3b8' } 
+                } 
             },
-            plugins: { legend: { display: false } }
+            plugins: { 
+                legend: { display: false },
+                // Menampilkan tooltip jumlah tiket saat batang grafik disentuh/di-hover
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return ` Menangani: ${context.raw} Tiket/Hari`;
+                        }
+                    }
+                }
+            }
         }
     });
-}
 
+    // Opsional: Mengupdate judul grafik agar dinamis menampilkan total tiket terfilter
+    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
+    if (chartHeader) {
+        chartHeader.innerText = `TOTAL PENGERJAAN TIKET (${totalTicketsActive})`;
+    }
+}
 function renderAgentTable(dataList) {
     const tableBody = document.getElementById('agent-table-body');
     tableBody.innerHTML = ""; 
