@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Productivity Dashboard</title>
-    <!-- Tailwind CSS untuk Styling Modern -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js v4.4.1 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -14,35 +14,49 @@
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
         <header class="mb-8 border-b border-slate-800 pb-4">
-            <h1 class="text-3xl font-bold text-white tracking-tight">Agent Productivity Dashboard</h1>
-            <p class="text-slate-400 text-sm mt-1">Real-time monitoring yang terhubung otomatis dengan Google Sheets</p>
+            <h1 class="text-3xl font-bold text-white tracking-tight">Agent Dashboard</h1>
+            <p class="text-slate-400 text-sm mt-1">Real-time productivity & time metrics monitoring</p>
         </header>
 
-        <!-- Loader Status -->
+        <!-- Loader -->
         <div id="loader" class="text-center py-12 text-slate-400 text-lg">
-            Sinkronisasi data Google Sheets...
+            Menyinkronkan data dari Google Sheets...
         </div>
 
-        <!-- Main Dashboard Content (Hidden before load) -->
-        <div id="dashboard-content" class="hidden space-y-8">
-            <!-- Grid Grafik Utama -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Chart 1: Jumlah Tiket -->
-                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-xl">
-                    <h3 class="text-lg font-semibold text-slate-200 mb-4">Total Pengerjaan Tiket</h3>
-                    <div class="h-80"><canvas id="ticketChart"></canvas></div>
-                </div>
+        <!-- Main Content -->
+        <div id="dashboard-content" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Sisi Kiri: Grafik Total Tiket -->
+            <div class="lg:col-span-1 bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-xl">
+                <h3 class="text-lg font-semibold text-slate-200 mb-4 tracking-wide text-center lg:text-left">TOTAL PENGERJAAN TIKET</h3>
+                <div class="h-80"><canvas id="ticketChart"></canvas></div>
+            </div>
 
-                <!-- Chart 2: Perbandingan Waktu (Menit) -->
-                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-xl">
-                    <h3 class="text-lg font-semibold text-slate-200 mb-4">Metrik Waktu Agen (Menit)</h3>
-                    <div class="h-80"><canvas id="timeMetricsChart"></canvas></div>
+            <!-- Sisi Kanan: Tabel Metrik Waktu Detail Per Agent -->
+            <div class="lg:col-span-2 bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-xl flex flex-col">
+                <h3 class="text-lg font-semibold text-slate-200 mb-4 tracking-wide">METRIK WAKTU AGENT (DURASI)</h3>
+                
+                <div class="overflow-x-auto flex-grow">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400 font-medium">
+                                <th class="py-3 px-4">NAME</th>
+                                <th class="py-3 px-4 text-center">RESPONSE</th>
+                                <th class="py-3 px-4 text-right">ART</th>
+                                <th class="py-3 px-4 text-right">AHT</th>
+                                <th class="py-3 px-4 text-right">TIME SPAN</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agent-table-body" class="divide-y divide-slate-700 text-slate-200">
+                            <!-- Data akan dimasukkan otomatis oleh script.js -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
+
         </div>
     </div>
 
-    <!-- Panggil Logika Skrip Aplikasi -->
     <script src="script.js"></script>
 </body>
 </html>
