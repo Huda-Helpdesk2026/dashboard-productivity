@@ -184,7 +184,7 @@ function processAndRenderData() {
         if (!agentAggregation[item.agent]) {
             agentAggregation[item.agent] = {
                 name: item.agent,
-                activityCount: 1, // Berapa kali handle/bekerja pada filter terpilih
+                activityCount: 1,
                 totalDurationSeconds: item.duration
             };
         } else {
@@ -194,25 +194,23 @@ function processAndRenderData() {
     });
 
     const chartAgents = [];
-    const chartActivities = [];
+    const chartAvgMinutes = []; // Konversi ke menit desimal untuk visualisasi grafik
     const tableData = [];
 
     Object.values(agentAggregation).forEach(agent => {
         chartAgents.push(agent.name);
-        // Grafik menampilkan frekuensi aktivitas/kasus yang ditangani berdasarkan filter
-        chartActivities.push(agent.activityCount); 
         
         const avgSeconds = agent.totalDurationSeconds / agent.activityCount;
+        chartAvgMinutes.push(parseFloat((avgSeconds / 60).toFixed(2))); 
 
         tableData.push({
             name: agent.name,
-            activity: agent.activityCount,
             totalDuration: formatSecondsToCustomHMS(agent.totalDurationSeconds),
             avgDuration: formatSecondsToCustomHMS(avgSeconds)
         });
     });
 
-    renderChart(chartAgents, chartActivities);
+    renderChart(chartAgents, chartAvgMinutes, agentAggregation);
     renderAgentTable(tableData);
 }
 
@@ -236,30 +234,18 @@ function formatSecondsToCustomHMS(totalSeconds) {
     return `${minutes}m ${seconds}s`;
 }
 
-function renderChart(agents, activities) {
+function renderChart(agents, avgMinutes, rawAggregation) {
     const chartStatus = Chart.getChart("ticketChart");
     if (chartStatus != undefined) chartStatus.destroy();
-
-    // Hitung total tiket keseluruhan yang sedang aktif di filter untuk ditampilkan di judul grafik
-    const totalTicketsActive = activities.reduce((a, b) => a + b, 0);
 
     new Chart(document.getElementById('ticketChart'), {
         type: 'bar',
         data: {
             labels: agents,
             datasets: [{
-                label: 'Jumlah Tiket',
-                data: activities,
-                backgroundColor: [
-                    'rgba(59, 130, 246, 0.8)',   // Blue
-                    'rgba(16, 185, 129, 0.8)',   // Emerald
-                    'rgba(245, 158, 11, 0.8)',   // Amber
-                    'rgba(239, 68, 68, 0.8)',    // Red
-                    'rgba(139, 92, 246, 0.8)'    // Purple
-                ],
-                borderColor: [
-                    '#3b82f6', '#10b981', '#f59d11', '#ef4444', '#8b5cf6'
-                ],
+                data: avgMinutes,
+                backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                borderColor: '#3b82f6',
                 borderWidth: 1,
                 borderRadius: 6
             }]
@@ -271,39 +257,35 @@ function renderChart(agents, activities) {
                 y: { 
                     beginAtZero: true, 
                     grid: { color: '#334155' }, 
-                    ticks: { color: '#94a3b8', stepSize: 1 } // Menggunakan angka bulat untuk hitungan tiket
+                    title: { display: true, text: 'Rata-rata (Menit)', color: '#94a3b8' },
+                    ticks: { color: '#94a3b8' }
                 }, 
-                x: { 
-                    grid: { display: false }, 
-                    ticks: { color: '#94a3b8' } 
-                } 
+                x: { grid: { display: false }, ticks: { color: '#94a3b8' } } 
             },
             plugins: { 
                 legend: { display: false },
-                // Menampilkan tooltip jumlah tiket saat batang grafik disentuh/di-hover
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return ` Menangani: ${context.raw} Tiket/Hari`;
+                            const agentName = context.label;
+                            const totalDataSeconds = rawAggregation[agentName].totalDurationSeconds;
+                            const count = rawAggregation[agentName].activityCount;
+                            const finalAvgSeconds = totalDataSeconds / count;
+                            return ` Rata-rata: ${formatSecondsToCustomHMS(finalAvgSeconds)}`;
                         }
                     }
                 }
             }
         }
     });
-
-    // Opsional: Mengupdate judul grafik agar dinamis menampilkan total tiket terfilter
-    const chartHeader = document.querySelector("#dashboard-content > div:nth-child(1) > h3");
-    if (chartHeader) {
-        chartHeader.innerText = `TOTAL PENGERJAAN TIKET (${totalTicketsActive})`;
-    }
 }
+
 function renderAgentTable(dataList) {
     const tableBody = document.getElementById('agent-table-body');
     tableBody.innerHTML = ""; 
     
     if(dataList.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="3" class="text-center py-8 text-slate-500">Tidak ada data di rentang filter ini.</td></tr>`;
         return;
     }
 
@@ -311,9 +293,8 @@ function renderAgentTable(dataList) {
         const rowHTML = `
             <tr class="hover:bg-slate-700/50 transition-colors">
                 <td class="py-3 px-4 font-semibold text-white">${item.name}</td>
-                <td class="py-3 px-4 text-center text-blue-400 font-bold">${item.activity}</td>
-                <td class="py-3 px-4 text-right font-mono text-emerald-400">${item.avgDuration}</td>
-                <td class="py-3 px-4 text-right font-mono text-amber-400">${item.totalDuration}</td>
+                <td class="py-3 px-4 text-right font-mono text-emerald-400 font-bold">${item.avgDuration}</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-400">${item.totalDuration}</td>
             </tr>
         `;
         tableBody.insertAdjacentHTML('beforeend', rowHTML);
