@@ -370,34 +370,33 @@ function renderAgentTable(dataList, rawAggregation, showOverallAverage, isPeriod
     // 2. Render baris akumulasi total tim "Overall Average" di paling bawah tabel
     if (showOverallAverage && Object.keys(rawAggregation).length > 0) {
         let globalTotalSeconds = 0;
-        let globalTotalDaysActive = 0;
+        const totalAgentsActive = Object.keys(rawAggregation).length; // Menghitung total agen unik yang aktif
 
         Object.values(rawAggregation).forEach(agent => {
-            globalTotalSeconds += agent.totalDurationSeconds;
-            globalTotalDaysActive += agent.daysActive;
+            // Jika filter mingguan/bulanan, yang dijumlahkan adalah rata-rata per agennya
+            if (isPeriodFilter) {
+                globalTotalSeconds += (agent.totalDurationSeconds / agent.daysActive);
+            } else {
+                // Jika filter harian, langsung jumlahkan total durasinya
+                globalTotalSeconds += agent.totalDurationSeconds;
+            }
         });
 
-        // 2. Render baris akumulasi total tim "Overall Average" di paling bawah tabel
-if (showOverallAverage && Object.keys(rawAggregation).length > 0) {
-    let globalTotalSeconds = 0;
-    const totalAgentsActive = Object.keys(rawAggregation).length; // Hitung ada berapa agen yang aktif
+        // FORMULA FIX: Menghitung rata-rata murni tim (Total Durasi dibagi Jumlah Agen yang tampil)
+        const globalAvgSeconds = totalAgentsActive > 0 ? (globalTotalSeconds / totalAgentsActive) : 0; 
 
-    Object.values(rawAggregation).forEach(agent => {
-        globalTotalSeconds += agent.totalDurationSeconds;
-    });
+        // Untuk kolom TOTAL RESPONSE TIME di bawah, kita ambil akumulasi total mentah semua agen
+        let totalAkumulasiSemua = 0;
+        Object.values(rawAggregation).forEach(agent => {
+            totalAkumulasiSemua += agent.totalDurationSeconds;
+        });
 
-    // PERBAIKAN: Nilai rata-rata tim adalah Total Durasi dibagi Jumlah Agen Aktif
-    const globalAvgSeconds = totalAgentsActive > 0 ? (globalTotalSeconds / totalAgentsActive) : 0; 
-
-    const totalRowHTML = `
-        <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
-            <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
-            <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(globalTotalSeconds)}</td>
-            <td class="py-3 px-4 text-right font-mono text-amber-400 text-base font-bold">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
-        </tr>
-    `;
-    tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
-}
+        const totalRowHTML = `
+            <tr class="border-t-2 border-slate-600 bg-slate-700/30 font-bold text-slate-200">
+                <td class="py-3 px-4 text-slate-400 tracking-wider uppercase text-xs font-bold">Overall Average</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${formatSecondsToCustomHMS(totalAkumulasiSemua)}</td>
+                <td class="py-3 px-4 text-right font-mono text-amber-400 text-base font-bold">${formatSecondsToCustomHMS(globalAvgSeconds)}</td>
+            </tr>
         `;
         tableBody.insertAdjacentHTML('beforeend', totalRowHTML);
     }
